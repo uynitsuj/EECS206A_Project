@@ -7,7 +7,31 @@ from pyqtgraph.Qt import QtCore, QtWidgets
 import pyqtgraph.opengl as gl
 import pyqtgraph as pg
 import sys
+from se3_to_quaternion import se3_to_quaternion
+import rospy
+from geometry_msgs.msg import PoseStamped
 
+def pose_publisher():
+    pub = rospy.Publisher('robot_pose', PoseStamped, queue_size=10)
+    rospy.init_node('pose', anonymous=True)
+    rate = rospy.Rate(100) # 10hz
+    while not rospy.is_shutdown():
+        pose = shared_memory.SharedMemory(name='pose')
+        pose = np.ndarray((4, 4), dtype=np.float64, buffer=pose.buf)
+        pose_msg = PoseStamped()
+        pose_msg.header.stamp = rospy.Time.now()
+        pose_msg.pose.position.x = pose[0][3]
+        pose_msg.pose.position.y = pose[1][3]
+        pose_msg.pose.position.z = pose[2][3]
+        (x, y, z, w) = se3_to_quaternion(pose)
+        pose_msg.pose.orientation.x = x
+        pose_msg.pose.orientation.y = y
+        pose_msg.pose.orientation.z = z
+        pose_msg.pose.orientation.w = w
+
+        rospy.loginfo(pose_msg)
+        pub.publish(pose_msg)
+        rate.sleep()
 
 class Visualizer(object):
     def __init__(self):
@@ -322,7 +346,7 @@ def stereo_process(outshm, mtx, b) -> None:
         buffer[:] = xyz[:]
 
 
-def updateHandTrack(capid: int, shm, shm3d, mtx, dist, newcameramtx, roi, imshow=False) -> None:
+def updateHandTrack(capid: int, shm, shm3d, mtx, dist, newcameramtx, roi, imshow=True) -> None:
     """
     Update loop for hand tracker pipeline.
     Intended to be used in a multiprocessing Process callback.
