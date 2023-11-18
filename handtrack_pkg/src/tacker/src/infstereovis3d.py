@@ -10,12 +10,16 @@ import sys
 from se3_to_quaternion import se3_to_quaternion
 import rospy
 from geometry_msgs.msg import PoseStamped
+from moveit_msgs.msg import PositionIKRequest
 
-def pose_publisher():
-    pub = rospy.Publisher('robot_pose', PoseStamped, queue_size=10)
-    rospy.init_node('pose', anonymous=True)
-    rate = rospy.Rate(100) # 10hz
-    while not rospy.is_shutdown():
+
+def get_ik(self, joint_seed=None):
+        """
+    Computes the inverse kinematics
+    returns a list of joint angles
+
+    if joint_seed is not specified, it will use the robot's current position
+    """
         pose = shared_memory.SharedMemory(name='pose')
         pose = np.ndarray((4, 4), dtype=np.float64, buffer=pose.buf)
         pose_msg = PoseStamped()
@@ -28,10 +32,46 @@ def pose_publisher():
         pose_msg.pose.orientation.y = y
         pose_msg.pose.orientation.z = z
         pose_msg.pose.orientation.w = w
+        pose_stamped = pose_msg
+        robot_state = self.robot.get_current_state()
 
-        rospy.loginfo(pose_msg)
-        pub.publish(pose_msg)
-        rate.sleep()
+        if joint_seed is not None:
+            robot_state.joint_state.position = joint_seed
+
+        req = PositionIKRequest()
+        req.group_name = self.group_name
+        req.robot_state = self.robot.get_current_state()
+        req.avoid_collisions = True
+        req.ik_link_name = self.group.get_end_effector_link()
+        req.pose_stamped = pose_stamped
+
+        try:
+            res = self.ik_solver(req)
+            return res.solution.joint_state.position
+        except rospy.ServiceException, e:
+            print("IK service call failed: {}".format(e))
+
+# def pose_publisher():
+#     pub = rospy.Publisher('robot_pose', PoseStamped, queue_size=10)
+#     rospy.init_node('pose', anonymous=True)
+#     rate = rospy.Rate(100) # 10hz
+#     while not rospy.is_shutdown():
+#         pose = shared_memory.SharedMemory(name='pose')
+#         pose = np.ndarray((4, 4), dtype=np.float64, buffer=pose.buf)
+#         pose_msg = PoseStamped()
+#         pose_msg.header.stamp = rospy.Time.now()
+#         pose_msg.pose.position.x = pose[0][3]
+#         pose_msg.pose.position.y = pose[1][3]
+#         pose_msg.pose.position.z = pose[2][3]
+#         (x, y, z, w) = se3_to_quaternion(pose)
+#         pose_msg.pose.orientation.x = x
+#         pose_msg.pose.orientation.y = y
+#         pose_msg.pose.orientation.z = z
+#         pose_msg.pose.orientation.w = w
+
+#         rospy.loginfo(pose_msg)
+#         pub.publish(pose_msg)
+#         rate.sleep()
 
 class Visualizer(object):
     def __init__(self):
